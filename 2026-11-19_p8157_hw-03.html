@@ -2891,6 +2891,51 @@ therefore observed in the counseling-plus-exercise group. These are
 population averages; individual patients may have different
 weight-change patterns.</p>
 </div>
+<div id="part-f" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> part f</h1>
+<p>Assuming the mean model is correctly specified, independent patients,
+and the usual regularity and observation-process conditions, consistency
+of the regression estimates must be distinguished from validity of their
+standard errors.</p>
+<p></p>
+<p>For these identity-link linear models, the fixed-effect estimating
+equations have expectation zero under the correct mean model, even if
+the covariance structure is misspecified. Thus, the fixed-effect
+estimates from both the random-intercept and
+random-intercept/random-slope models can remain consistent.</p>
+<p>However, reports model-based standard errors, whose validity depends
+on the covariance specification. Parts (b) and (c) provided evidence
+that the random-intercept-only covariance structure was inadequate. Its
+reported standard errors therefore cannot be assumed valid, even though
+its fixed-effect estimates may remain consistent. The
+random-intercept/random-slope model has valid model-based standard
+errors if its covariance structure is correctly specified. Its improved
+fit does not establish that every covariance assumption is correct.</p>
+<p>Correct specification of the mean alone also does not guarantee
+consistent estimation of the true variance components under a
+misspecified covariance model.</p>
+<p></p>
+<p>The regression estimates from GEE-I, GEE-E, and GEE-AR1 are
+consistent under the correct mean model, even when their working
+correlation structures are incorrect. The standard errors reported in
+part (d) were robust sandwich standard errors, which are asymptotically
+valid under working covariance misspecification.</p>
+<p>The working correlation structure affects efficiency, so the three
+methods can produce different estimates and standard errors in this
+finite sample without contradicting their consistency. These asymptotic
+results depend primarily on the number of independent patients, here
+<span class="math inline">\(K=120\)</span>, rather than the total of 997
+observations.</p>
+<p></p>
+<p>If follow-up is incomplete, missingness assumptions are also
+required. MCAR is a sufficient condition for the usual unweighted GEE
+analysis, whereas validity is not generally guaranteed under MAR without
+additional adjustment. A correctly specified likelihood-based model can
+support valid inference under MAR when the response-model and
+missingness-model parameters are distinct. Consequently, correct
+specification of the mean alone does not guarantee validity under
+arbitrary missingness.</p>
+</div>
 
 
 
