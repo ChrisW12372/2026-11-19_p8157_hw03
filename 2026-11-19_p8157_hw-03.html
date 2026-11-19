@@ -1732,6 +1732,7 @@ border-radius: 0px;
 <pre class="r"><code>library(nlme)
 library(knitr)
 library(kableExtra)
+library(geepack)
 
 load(&quot;WtLoss.RData&quot;)</code></pre>
 <div id="part-a" class="section level1" number="1">
@@ -2487,6 +2488,329 @@ random-intercept and random-slope model (<span class="math inline">\(T_{\mathrm{
 semivariance is consistent with unmodeled between-patient variation in
 rates of weight change, supporting the inclusion of random time
 slopes.</p>
+</div>
+<div id="part-d" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> part d</h1>
+<pre class="r"><code>gee_data &lt;- wtloss[order(wtloss$id, wtloss$time), ]
+
+gee_data$id &lt;- factor(gee_data$id)
+gee_data$diet &lt;- factor(
+  gee_data$diet,
+  levels = c(0, 1, 2)
+)
+
+contrasts(gee_data$diet) &lt;- contr.treatment(
+  levels(gee_data$diet),
+  base = 1
+)
+
+gee_data$visit &lt;- gee_data$time + 1L
+
+
+# Working independence
+fit_gee_i &lt;- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = &quot;identity&quot;),
+  corstr = &quot;independence&quot;,
+  scale.fix = FALSE,
+  std.err = &quot;san.se&quot;
+)
+
+
+# Working exchangeable
+fit_gee_e &lt;- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = &quot;identity&quot;),
+  corstr = &quot;exchangeable&quot;,
+  scale.fix = FALSE,
+  std.err = &quot;san.se&quot;
+)
+
+
+# Working AR(1)
+fit_gee_ar1 &lt;- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = &quot;identity&quot;),
+  corstr = &quot;ar1&quot;,
+  scale.fix = FALSE,
+  std.err = &quot;san.se&quot;
+)
+
+summary(fit_gee_i)</code></pre>
+<pre><code>## 
+## Call:
+## geeglm(formula = weight ~ diet * time, family = gaussian(link = &quot;identity&quot;), 
+##     data = gee_data, id = id, waves = visit, corstr = &quot;independence&quot;, 
+##     scale.fix = FALSE, std.err = &quot;san.se&quot;)
+## 
+##  Coefficients:
+##               Estimate    Std.err      Wald Pr(&gt;|W|)    
+## (Intercept) 251.017403   0.581142 1.866e+05  &lt; 2e-16 ***
+## diet1        -0.861213   0.755270 1.300e+00 0.254173    
+## diet2        -2.809085   0.784815 1.281e+01 0.000345 ***
+## time         -0.016014   0.082410 3.800e-02 0.845927    
+## diet1:time    0.008145   0.098507 7.000e-03 0.934099    
+## diet2:time   -0.400459   0.104703 1.463e+01 0.000131 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Correlation structure = independence 
+## Estimated Scale Parameters:
+## 
+##             Estimate Std.err
+## (Intercept)    9.779   1.071
+## Number of clusters:   120  Maximum cluster size: 12</code></pre>
+<pre class="r"><code>summary(fit_gee_e)</code></pre>
+<pre><code>## 
+## Call:
+## geeglm(formula = weight ~ diet * time, family = gaussian(link = &quot;identity&quot;), 
+##     data = gee_data, id = id, waves = visit, corstr = &quot;exchangeable&quot;, 
+##     scale.fix = FALSE, std.err = &quot;san.se&quot;)
+## 
+##  Coefficients:
+##             Estimate  Std.err     Wald Pr(&gt;|W|)    
+## (Intercept) 250.9455   0.5588 2.02e+05  &lt; 2e-16 ***
+## diet1        -0.6464   0.7362 7.70e-01  0.37992    
+## diet2        -2.6607   0.7484 1.26e+01  0.00038 ***
+## time          0.0398   0.0348 1.31e+00  0.25313    
+## diet1:time   -0.1235   0.0549 5.07e+00  0.02434 *  
+## diet2:time   -0.5002   0.0502 9.92e+01  &lt; 2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Correlation structure = exchangeable 
+## Estimated Scale Parameters:
+## 
+##             Estimate Std.err
+## (Intercept)     9.83    1.08
+##   Link = identity 
+## 
+## Estimated Correlation Parameters:
+##       Estimate Std.err
+## alpha    0.858   0.037
+## Number of clusters:   120  Maximum cluster size: 12</code></pre>
+<pre class="r"><code>summary(fit_gee_ar1)</code></pre>
+<pre><code>## 
+## Call:
+## geeglm(formula = weight ~ diet * time, family = gaussian(link = &quot;identity&quot;), 
+##     data = gee_data, id = id, waves = visit, corstr = &quot;ar1&quot;, 
+##     scale.fix = FALSE, std.err = &quot;san.se&quot;)
+## 
+##  Coefficients:
+##              Estimate   Std.err     Wald Pr(&gt;|W|)    
+## (Intercept) 251.12925   0.58331 1.85e+05   &lt;2e-16 ***
+## diet1        -0.70267   0.78440 8.00e-01   0.3704    
+## diet2        -2.24942   0.79992 7.91e+00   0.0049 ** 
+## time          0.00989   0.04236 5.00e-02   0.8155    
+## diet1:time   -0.11810   0.06008 3.86e+00   0.0493 *  
+## diet2:time   -0.52145   0.05582 8.73e+01   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Correlation structure = ar1 
+## Estimated Scale Parameters:
+## 
+##             Estimate Std.err
+## (Intercept)     9.88    1.08
+##   Link = identity 
+## 
+## Estimated Correlation Parameters:
+##       Estimate Std.err
+## alpha    0.963   0.014
+## Number of clusters:   120  Maximum cluster size: 12</code></pre>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;border-bottom: 0;">
+<caption>
+GEE estimates of weight trajectories under three working correlation
+structures.
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Parameter
+</th>
+<th style="text-align:right;">
+GEE-I
+</th>
+<th style="text-align:right;">
+GEE-E
+</th>
+<th style="text-align:right;">
+GEE-AR1
+</th>
+</tr>
+</thead>
+<tbody>
+<tr grouplength="6">
+<td colspan="4" style="border-bottom: 1px solid;">
+<strong>Regression parameters</strong>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Baseline mean: diet 0
+</td>
+<td style="text-align:right;">
+251.0174 (249.8784, 252.1564)
+</td>
+<td style="text-align:right;">
+250.9455 (249.8502, 252.0407)
+</td>
+<td style="text-align:right;">
+251.1293 (249.9860, 252.2725)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Baseline difference: diet 1 vs 0
+</td>
+<td style="text-align:right;">
+-0.8612 (-2.3415, 0.6191)
+</td>
+<td style="text-align:right;">
+-0.6464 (-2.0892, 0.7965)
+</td>
+<td style="text-align:right;">
+-0.7027 (-2.2401, 0.8347)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Baseline difference: diet 2 vs 0
+</td>
+<td style="text-align:right;">
+-2.8091 (-4.3473, -1.2709)
+</td>
+<td style="text-align:right;">
+-2.6607 (-4.1276, -1.1938)
+</td>
+<td style="text-align:right;">
+-2.2494 (-3.8172, -0.6816)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Monthly change: diet 0
+</td>
+<td style="text-align:right;">
+-0.0160 (-0.1775, 0.1455)
+</td>
+<td style="text-align:right;">
+0.0398 (-0.0285, 0.1081)
+</td>
+<td style="text-align:right;">
+0.0099 (-0.0731, 0.0929)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Slope difference: diet 1 vs 0
+</td>
+<td style="text-align:right;">
+0.0081 (-0.1849, 0.2012)
+</td>
+<td style="text-align:right;">
+-0.1235 (-0.2311, -0.0160)
+</td>
+<td style="text-align:right;">
+-0.1181 (-0.2359, -0.0003)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Slope difference: diet 2 vs 0
+</td>
+<td style="text-align:right;">
+-0.4005 (-0.6057, -0.1952)
+</td>
+<td style="text-align:right;">
+-0.5002 (-0.5986, -0.4018)
+</td>
+<td style="text-align:right;">
+-0.5215 (-0.6309, -0.4121)
+</td>
+</tr>
+<tr grouplength="2">
+<td colspan="4" style="border-bottom: 1px solid;">
+<strong>Working covariance parameters</strong>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Working correlation parameter
+</td>
+<td style="text-align:right;">
+0.0000
+</td>
+<td style="text-align:right;">
+0.8583
+</td>
+<td style="text-align:right;">
+0.9631
+</td>
+</tr>
+<tr>
+<td style="text-align:left;padding-left: 2em;width: 250px; " indentlevel="1">
+Dispersion parameter
+</td>
+<td style="text-align:right;">
+9.7790
+</td>
+<td style="text-align:right;">
+9.8273
+</td>
+<td style="text-align:right;">
+9.8830
+</td>
+</tr>
+</tbody>
+<tfoot>
+<tr>
+<td style="padding: 0; " colspan="100%">
+<span style="font-style: italic;">Notes: </span> <sup></sup> GEE-I,
+working independence; GEE-E, working exchangeable; GEE-AR1, working
+first-order autoregressive correlation. All models used an identity link
+and the same mean model, with 997 observations from 120 patients.
+Regression entries are estimates (95% robust sandwich Wald CIs). Working
+covariance parameters are point estimates only. Diet 0 is the reference:
+baseline counseling only; diet 1: counseling at all visits; diet 2:
+counseling at all visits plus free exercise-facility access. Time is in
+months, with month 0 representing baseline. For GEE-AR1, the correlation
+parameter refers to a one-month lag; for GEE-I it is fixed at zero.
+Weight is reported in the original, unspecified measurement units.
+</td>
+</tr>
+</tfoot>
+</table>
+<p>For the GEE-E analysis, the marginal mean model was <span class="math display">\[
+\begin{aligned}
+E(Y_{ki}\mid D_{1k},D_{2k},t_{ki})
+={}&amp;\beta_0+\beta_1D_{1k}+\beta_2D_{2k}
++\beta_3t_{ki}\\
+&amp;+\beta_4D_{1k}t_{ki}
++\beta_5D_{2k}t_{ki},
+\end{aligned}
+\]</span> where <span class="math inline">\(D_{1k}=I(\mathrm{diet}_k=1)\)</span> and <span class="math inline">\(D_{2k}=I(\mathrm{diet}_k=2)\)</span>. Diet 0 was
+the reference group, and <span class="math inline">\(t=0\)</span>
+represented baseline. Confidence intervals and <span class="math inline">\(p\)</span> values were based on robust sandwich
+standard errors.</p>
+<p>Thus, the estimated population mean trajectories corresponded to
+average monthly weight losses of approximately 0.084 and 0.460 units in
+diets 1 and 2, respectively. The interaction coefficients represent
+differences between treatment-specific slopes; their <span class="math inline">\(p\)</span> values do not test whether each group’s
+own slope equals zero.</p>
+<p>The estimated exchangeable working correlation was 0.8583, indicating
+strong within-patient association under a working model that assigns the
+same correlation to every pair of measurements from the same
+patient.</p>
 </div>
 
 

@@ -16,6 +16,7 @@ output:
 library(nlme)
 library(knitr)
 library(kableExtra)
+library(geepack)
 
 load("WtLoss.RData")
 ```
@@ -706,11 +707,279 @@ between-patient variation in rates of weight change,
 supporting the inclusion of random time slopes.
 
 
+# part d
 
 
+```{r}
+gee_data <- wtloss[order(wtloss$id, wtloss$time), ]
+
+gee_data$id <- factor(gee_data$id)
+gee_data$diet <- factor(
+  gee_data$diet,
+  levels = c(0, 1, 2)
+)
+
+contrasts(gee_data$diet) <- contr.treatment(
+  levels(gee_data$diet),
+  base = 1
+)
+
+gee_data$visit <- gee_data$time + 1L
 
 
+# Working independence
+fit_gee_i <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "independence",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
 
+
+# Working exchangeable
+fit_gee_e <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "exchangeable",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
+
+
+# Working AR(1)
+fit_gee_ar1 <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "ar1",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
+
+summary(fit_gee_i)
+summary(fit_gee_e)
+summary(fit_gee_ar1)
+```
+
+
+```{r q1d-table, echo=FALSE, results='asis', message=FALSE, warning=FALSE, comment=NA}
+coef_order <- c(
+  "(Intercept)", "diet1", "diet2",
+  "time", "diet1:time", "diet2:time"
+)
+
+labels <- c(
+  "Baseline mean: diet 0",
+  "Baseline difference: diet 1 vs 0",
+  "Baseline difference: diet 2 vs 0",
+  "Monthly change: diet 0",
+  "Slope difference: diet 1 vs 0",
+  "Slope difference: diet 2 vs 0"
+)
+
+extract_gee <- function(fit) {
+  tt <- summary(fit)$coefficients[
+    coef_order, , drop = FALSE
+  ]
+
+  estimate <- tt[, "Estimate"]
+  se <- tt[, "Std.err"]
+
+  sprintf(
+    "%.4f (%.4f, %.4f)",
+    estimate,
+    estimate - qnorm(0.975) * se,
+    estimate + qnorm(0.975) * se
+  )
+}
+
+fixed_rows <- data.frame(
+  Parameter = labels,
+  I = extract_gee(fit_gee_i),
+  E = extract_gee(fit_gee_e),
+  AR1 = extract_gee(fit_gee_ar1)
+)
+
+working_rows <- data.frame(
+  Parameter = c(
+    "Working correlation parameter",
+    "Dispersion parameter"
+  ),
+  I = sprintf(
+    "%.4f",
+    c(0, fit_gee_i$geese$gamma[1])
+  ),
+  E = sprintf(
+    "%.4f",
+    c(
+      fit_gee_e$geese$alpha[1],
+      fit_gee_e$geese$gamma[1]
+    )
+  ),
+  AR1 = sprintf(
+    "%.4f",
+    c(
+      fit_gee_ar1$geese$alpha[1],
+      fit_gee_ar1$geese$gamma[1]
+    )
+  )
+)
+
+table_data <- rbind(fixed_rows, working_rows)
+is_latex <- knitr::is_latex_output()
+
+args <- list(
+  x = table_data,
+  format = if (is_latex) "latex" else "html",
+  caption = paste(
+    "GEE estimates of weight trajectories",
+    "under three working correlation structures."
+  ),
+  col.names = c("Parameter", "GEE-I", "GEE-E", "GEE-AR1"),
+  row.names = FALSE,
+  align = c("l", "r", "r", "r")
+)
+
+if (is_latex) args$booktabs <- TRUE
+
+tab_q1d <- do.call(knitr::kable, args) |>
+  pack_rows("Regression parameters", 1, 6) |>
+  pack_rows("Working covariance parameters", 7, 8)
+
+if (is_latex) {
+  tab_q1d <- tab_q1d |>
+    column_spec(1, width = "3.8cm") |>
+    kable_styling(
+      latex_options = c("hold_position", "scale_down"),
+      font_size = 9
+    )
+} else {
+  tab_q1d <- tab_q1d |>
+    column_spec(1, width = "250px") |>
+    kable_styling(
+      full_width = FALSE,
+      position = "center"
+    )
+}
+
+notes <- paste(
+  "GEE-I, working independence; GEE-E, working exchangeable;",
+  "GEE-AR1, working first-order autoregressive correlation.",
+  "All models used an identity link and the same mean model,",
+  "with 997 observations from 120 patients.",
+  "Regression entries are estimates (95% robust sandwich Wald CIs).",
+  "Working covariance parameters are point estimates only.",
+  "Diet 0 is the reference: baseline counseling only;",
+  "diet 1: counseling at all visits;",
+  "diet 2: counseling at all visits plus free exercise-facility access.",
+  "Time is in months, with month 0 representing baseline.",
+  "For GEE-AR1, the correlation parameter refers to a one-month lag;",
+  "for GEE-I it is fixed at zero.",
+  "Weight is reported in the original, unspecified measurement units."
+)
+
+tab_q1d <- tab_q1d |>
+  footnote(
+    general = notes,
+    general_title = "Notes: ",
+    footnote_as_chunk = TRUE,
+    threeparttable = is_latex,
+    fixed_small_size = TRUE
+  )
+
+tab_q1d
+```
+
+
+For the GEE-E analysis, the marginal mean model was
+\[
+\begin{aligned}
+E(Y_{ki}\mid D_{1k},D_{2k},t_{ki})
+={}&\beta_0+\beta_1D_{1k}+\beta_2D_{2k}
++\beta_3t_{ki}\\
+&+\beta_4D_{1k}t_{ki}
++\beta_5D_{2k}t_{ki},
+\end{aligned}
+\]
+where $D_{1k}=I(\mathrm{diet}_k=1)$ and
+$D_{2k}=I(\mathrm{diet}_k=2)$.
+Diet 0 was the reference group, and $t=0$ represented
+baseline. Confidence intervals and $p$ values were based
+on robust sandwich standard errors.
+
+\begin{itemize}
+\item $\widehat{\beta}_0=250.9455$:
+The estimated population mean baseline weight in diet 0
+was 250.9455 weight units
+(95\% CI: 249.8502, 252.0407).
+
+\item $\widehat{\beta}_1=-0.6464$:
+At baseline, the population mean weight in diet 1 was
+an estimated 0.6464 units lower than in diet 0
+(95\% CI for the difference: $-2.0892$, $0.7965$;
+$p=0.380$).
+There was insufficient evidence of a baseline
+mean difference between these groups.
+
+\item $\widehat{\beta}_2=-2.6607$:
+At baseline, the population mean weight in diet 2 was
+an estimated 2.6607 units lower than in diet 0
+(95\% CI for the difference: $-4.1276$, $-1.1938$;
+$p<0.001$).
+
+\item $\widehat{\beta}_3=0.0398$:
+In diet 0, population mean weight increased by an
+estimated 0.0398 units per month
+(95\% CI: $-0.0285$, $0.1081$; $p=0.253$).
+There was insufficient evidence of a nonzero
+linear change in this group.
+
+\item $\widehat{\beta}_4=-0.1235$:
+The monthly change in population mean weight in diet 1
+was 0.1235 units lower than in diet 0
+(95\% CI for the difference: $-0.2311$, $-0.0160$;
+$p=0.024$).
+The estimated slope in diet 1 was
+\[
+\widehat{\beta}_3+\widehat{\beta}_4
+\approx -0.084
+\]
+weight units per month.
+
+\item $\widehat{\beta}_5=-0.5002$:
+The monthly change in population mean weight in diet 2
+was 0.5002 units lower than in diet 0
+(95\% CI for the difference: $-0.5986$, $-0.4018$;
+$p<0.001$).
+The estimated slope in diet 2 was
+\[
+\widehat{\beta}_3+\widehat{\beta}_5
+\approx -0.460
+\]
+weight units per month.
+\end{itemize}
+
+Thus, the estimated population mean trajectories
+corresponded to average monthly weight losses of
+approximately 0.084 and 0.460 units in diets 1 and 2,
+respectively. The interaction coefficients represent
+differences between treatment-specific slopes;
+their $p$ values do not test whether each group's
+own slope equals zero.
+
+The estimated exchangeable working correlation was
+0.8583, indicating strong within-patient association
+under a working model that assigns the same correlation
+to every pair of measurements from the same patient.
 
 
 
