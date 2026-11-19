@@ -580,3 +580,141 @@ interaction with time, patients still differ in their
 rates of weight change. The random-intercept-only model
 is therefore inadequate to describe this between-patient
 variation in longitudinal trajectories.
+
+
+# part c
+
+
+```{r}
+# Conditional standardized residuals
+diag_data <- getData(fit_ri)
+
+diag_data$fitted <- as.numeric(
+  fitted(fit_ri, level = 1)
+)
+
+diag_data$residual <- as.numeric(
+  residuals(fit_ri, level = 1, type = "pearson")
+)
+
+vg <- Variogram(
+  fit_ri,
+  form = ~ time | id,
+  resType = "pearson"
+)
+
+old_par <- par(
+  mfrow = c(2, 2),
+  mar = c(4, 4, 3, 1)
+)
+
+
+# Residuals versus fitted values
+plot(
+  diag_data$fitted,
+  diag_data$residual,
+  pch = 16,
+  col = adjustcolor("black", alpha.f = 0.3),
+  xlab = "Conditional fitted weight",
+  ylab = "Standardized residual",
+  main = "Residuals vs fitted values"
+)
+
+abline(h = 0, col = "grey50", lty = 2)
+
+lines(
+  lowess(diag_data$fitted, diag_data$residual),
+  col = "red3",
+  lwd = 2
+)
+
+
+# Residual distribution over time
+boxplot(
+  residual ~ time,
+  data = diag_data,
+  col = "grey90",
+  xlab = "Month",
+  ylab = "Standardized residual",
+  main = "Residuals by month"
+)
+
+abline(h = 0, col = "red3", lty = 2)
+
+
+# Residual normality
+qqnorm(
+  diag_data$residual,
+  pch = 16,
+  cex = 0.5,
+  main = "Normal Q-Q plot of residuals"
+)
+
+qqline(
+  diag_data$residual,
+  col = "red3",
+  lwd = 2
+)
+
+
+# Within-patient residual dependence
+plot(
+  vg$dist,
+  vg$variog,
+  type = "b",
+  pch = 16,
+  xlab = "Time lag (months)",
+  ylab = "Semivariance",
+  main = "Residual semivariogram"
+)
+
+abline(h = 1, col = "red3", lty = 2)
+
+par(old_par)
+
+vg[, c("dist", "variog", "n.pairs")]
+```
+
+
+
+The standardized conditional residuals were generally centered
+near zero, and the residual-versus-fitted plot showed no strong
+systematic trend or pronounced funnel shape. The monthly
+boxplots showed some differences in residual location and
+spread. The normal Q--Q plot was approximately linear,
+with modest departures in the tails and a few extreme
+residuals, suggesting that normality was broadly reasonable.
+
+The residual semivariogram, however, showed a clear increase
+with time lag. The estimated semivariance increased from
+0.784 at a one-month lag to 2.328 at a ten-month lag.
+Under the random-intercept model with independent,
+homoscedastic residual errors, the standardized residual
+semivariogram would be expected to be approximately flat
+near 1. The observed pattern therefore suggests that the
+model does not adequately capture the within-patient
+covariance structure. Estimates at the longest lags are
+less precise because they are based on relatively few pairs,
+particularly 41 pairs at ten months and 15 pairs at eleven months.
+
+These findings are consistent with part (b), where the
+random-intercept-only model was rejected in favor of the
+random-intercept and random-slope model
+($T_{\mathrm{obs}}=72.899$, bootstrap $p\approx0.001$).
+The increasing semivariance is consistent with unmodeled
+between-patient variation in rates of weight change,
+supporting the inclusion of random time slopes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
