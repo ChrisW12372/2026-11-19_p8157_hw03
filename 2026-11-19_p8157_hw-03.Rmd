@@ -384,7 +384,199 @@ weight units per month. The correlation is dimensionless.
 
 
 
+# part b
 
 
+```{r}
+# Use the default simulation algorithm and save the results.
+cache_file <- "Q1b_default_REML_seed1504.rds"
+
+if (file.exists(cache_file)) {
+  sim_b <- readRDS(cache_file)
+} else {
+  sim_b <- simulate.lme(
+    object = fit_ri,
+    m2 = fit_ris,
+    nsim = 1000,
+    seed = 1504,
+    method = "REML"
+  )
+
+  saveRDS(sim_b, cache_file)
+}
+
+null_fit <- sim_b$null$REML
+alt_fit <- sim_b$alt$REML
+
+table(
+  Null = null_fit[, "info"],
+  Alternative = alt_fit[, "info"]
+)
 
 
+# Follow the statistic construction in plot.simulate.lme().
+ok <- null_fit[, "info"] == 0 &
+      alt_fit[, "info"] == 0 &
+      is.finite(null_fit[, "logLik"]) &
+      is.finite(alt_fit[, "logLik"])
+
+if (!all(ok)) {
+  warning("Only converged simulations are used; inspect the reported count.")
+}
+
+T_sim <- 2 * pmax(
+  0,
+  alt_fit[ok, "logLik"] - null_fit[ok, "logLik"]
+)
+
+T_obs <- 2 * as.numeric(
+  logLik(fit_ris) - logLik(fit_ri)
+)
+
+q95 <- c(
+  Simulated = unname(quantile(T_sim, 0.95)),
+  Chi_square_1 = qchisq(0.95, df = 1),
+  Chi_square_2 = qchisq(0.95, df = 2)
+)
+
+critical_values <- data.frame(
+  Distribution = names(q95),
+  Percentile_95 = unname(q95)
+)
+
+test_results <- data.frame(
+  Observed_RLRT = T_obs,
+  Simulations_used = length(T_sim),
+  Bootstrap_p =
+    (1 + sum(T_sim >= T_obs)) / (length(T_sim) + 1)
+)
+
+critical_values
+test_results
+
+
+# Plot the simulated distribution and theoretical densities.
+hist(
+  T_sim,
+  breaks = 30,
+  probability = TRUE,
+  col = "grey85",
+  border = "white",
+  xlim = c(0, max(T_sim, qchisq(0.995, 2))),
+  main = "Null distribution of the RLRT statistic",
+  xlab = "Restricted likelihood-ratio statistic",
+  ylab = "Density"
+)
+
+curve(
+  dchisq(x, df = 1),
+  from = 0.001,
+  add = TRUE,
+  col = "red3",
+  lwd = 2
+)
+
+curve(
+  dchisq(x, df = 2),
+  from = 0,
+  add = TRUE,
+  col = "blue3",
+  lwd = 2
+)
+
+abline(
+  v = q95,
+  col = c("black", "red3", "blue3"),
+  lty = 2,
+  lwd = 2
+)
+
+legend(
+  "topright",
+  legend = sprintf(
+    c(
+      "Simulated: 95%% = %.3f",
+      "Chi-square(1): 95%% = %.3f",
+      "Chi-square(2): 95%% = %.3f"
+    ),
+    q95
+  ),
+  col = c("black", "red3", "blue3"),
+  lty = c(2, 1, 1),
+  lwd = 2,
+  bty = "n",
+  cex = 0.85
+)
+```
+
+Let $\sigma_1^2$ denote the variance of the random time slope
+and $\sigma_{01}$ the covariance between the random intercept
+and slope. We tested
+\[
+H_0:\sigma_1^2=0
+\quad\text{versus}\quad
+H_A:\sigma_1^2>0.
+\]
+Under $H_0$, positive semidefiniteness of the random-effects
+covariance matrix also requires $\sigma_{01}=0$.
+Under $H_A$, this covariance is estimated without being
+restricted to zero.
+
+This is a nonstandard testing problem because a variance
+of zero lies on the boundary of the parameter space.
+For this model comparison, the asymptotic reference
+distribution is
+\[
+\frac{1}{2}\chi_1^2+\frac{1}{2}\chi_2^2,
+\]
+rather than a conventional chi-square distribution based
+solely on the number of additional parameters.
+
+We used \texttt{simulate.lme()} to generate 1,000 datasets
+under the fitted random-intercept model, with seed 1504.
+Both models were fitted by REML to each simulated dataset.
+The observed restricted likelihood-ratio statistic was
+\[
+T_{\mathrm{obs}}
+=
+2\left\{
+\ell_R(\widehat{\theta}_{\mathrm{RIS}})
+-
+\ell_R(\widehat{\theta}_{\mathrm{RI}})
+\right\}
+=
+72.899.
+\]
+
+The simulated null distribution was right-skewed.
+Its estimated 95th percentile was 4.529, between the
+corresponding percentiles of the $\chi_1^2$ and $\chi_2^2$
+distributions, 3.841 and 5.991, respectively.
+Relative to the simulated critical value, using
+$\chi_1^2$ alone would give a lower rejection threshold,
+whereas using $\chi_2^2$ alone would give a higher threshold.
+
+The observed statistic was substantially greater than
+the simulated 95th percentile. None of the 1,000 simulated
+statistics was as large as the observed statistic.
+Using the Monte Carlo correction, the estimated
+bootstrap $p$ value was
+\[
+\widehat{p}
+=
+\frac{1+\sum_{b=1}^{1000}
+I(T_b\geq T_{\mathrm{obs}})}
+{1000+1}
+=
+\frac{1}{1001}
+\approx 0.001.
+\]
+
+We therefore reject $H_0$ at the 5\% significance level.
+The random-intercept and random-slope model provides
+a significantly better fit than the random-intercept-only
+model. After accounting for treatment group and its
+interaction with time, patients still differ in their
+rates of weight change. The random-intercept-only model
+is therefore inadequate to describe this between-patient
+variation in longitudinal trajectories.
