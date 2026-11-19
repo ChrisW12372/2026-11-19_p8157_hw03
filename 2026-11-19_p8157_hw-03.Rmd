@@ -1,0 +1,390 @@
+---
+title: "2026-11-19_p8157_hw-03"
+author: "Chris"
+date: "2026-11-19"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    number_sections: TRUE
+    theme: cosmo
+    css: style.css
+---
+
+
+```{r warning=FALSE, message=FALSE}
+library(nlme)
+library(knitr)
+library(kableExtra)
+
+load("WtLoss.RData")
+```
+
+
+# part a
+
+```{r}
+str(wtloss)
+
+wtloss$diet <- factor(wtloss$diet, levels = c(0, 1, 2))
+contrasts(wtloss$diet) <- contr.treatment(
+  levels(wtloss$diet),
+  base = 1
+)
+
+wtloss$id <- factor(wtloss$id)
+wtloss <- wtloss[order(wtloss$id, wtloss$time), ]
+```
+
+
+```{r}
+# Model (i): random intercept
+fit_ri <- lme(
+  fixed = weight ~ diet * time,
+  random = ~ 1 | id,
+  data = wtloss,
+  method = "REML"
+)
+
+
+# Model (ii): correlated random intercept and time slope
+fit_ris <- lme(
+  fixed = weight ~ diet * time,
+  random = ~ 1 + time | id,
+  data = wtloss,
+  method = "REML"
+)
+```
+
+
+```{r}
+summary(fit_ri)
+summary(fit_ris)
+
+VarCorr(fit_ri)
+VarCorr(fit_ris)
+
+intervals(fit_ri, which = "fixed")
+intervals(fit_ris, which = "fixed")
+
+
+# Random-effects covariance and correlation matrices
+G_ris <- as.matrix(
+  getVarCov(fit_ris, type = "random.effects")
+)
+
+G_ris
+cov2cor(G_ris)
+
+# Residual variance
+sigma(fit_ris)^2
+```
+
+```{r q1a-table, echo=FALSE, results='asis', message=FALSE, warning=FALSE, comment=NA}
+terms <- c(
+  "(Intercept)", "diet1", "diet2",
+  "time", "diet1:time", "diet2:time"
+)
+
+labels <- c(
+  "Baseline mean: diet 0",
+  "Baseline difference: diet 1 vs 0",
+  "Baseline difference: diet 2 vs 0",
+  "Monthly change: diet 0",
+  "Slope difference: diet 1 vs 0",
+  "Slope difference: diet 2 vs 0"
+)
+
+extract_fixed <- function(fit) {
+  tt <- summary(fit)$tTable[terms, , drop = FALSE]
+  ci <- intervals(fit, which = "fixed")$fixed[
+    terms, , drop = FALSE
+  ]
+
+  data.frame(
+    estimate = sprintf(
+      "%.3f (%.3f, %.3f)",
+      tt[, "Value"], ci[, "lower"], ci[, "upper"]
+    ),
+    p = ifelse(
+      tt[, "p-value"] < 0.001,
+      "<0.001",
+      sprintf("%.3f", tt[, "p-value"])
+    )
+  )
+}
+
+ri <- extract_fixed(fit_ri)
+ris <- extract_fixed(fit_ris)
+
+G_ri <- as.matrix(
+  getVarCov(fit_ri, type = "random.effects")
+)
+G_ris <- as.matrix(
+  getVarCov(fit_ris, type = "random.effects")
+)
+
+fixed_rows <- data.frame(
+  Parameter = labels,
+  RI = ri$estimate,
+  RI_p = ri$p,
+  RIS = ris$estimate,
+  RIS_p = ris$p
+)
+
+random_rows <- data.frame(
+  Parameter = c(
+    "Random-intercept variance",
+    "Random-slope variance",
+    "Intercept-slope covariance",
+    "Intercept-slope correlation",
+    "Residual variance"
+  ),
+  RI = c(
+    sprintf("%.4f", G_ri[1, 1]),
+    rep("--", 3),
+    sprintf("%.4f", sigma(fit_ri)^2)
+  ),
+  RI_p = "",
+  RIS = sprintf(
+    "%.4f",
+    c(
+      G_ris[1, 1],
+      G_ris[2, 2],
+      G_ris[1, 2],
+      cov2cor(G_ris)[1, 2],
+      sigma(fit_ris)^2
+    )
+  ),
+  RIS_p = ""
+)
+
+table_data <- rbind(fixed_rows, random_rows)
+is_latex <- knitr::is_latex_output()
+
+notes <- paste(
+  "Both models were fitted by REML using 997 observations from 120 patients.",
+  "Time is in months; month 0 is baseline.",
+  "Diet 0 is the reference group: baseline counseling only;",
+  "diet 1: counseling at all visits;",
+  "diet 2: counseling at all visits plus free exercise-facility access.",
+  "Fixed effects are estimates (95% CIs) with model-based t-test p values.",
+  "Variance components and the correlation are point estimates only.",
+  "A dash indicates a parameter absent from model (i).",
+  "Weight is reported in the original, unspecified measurement units."
+)
+
+args <- list(
+  x = table_data,
+  format = if (is_latex) "latex" else "html",
+  caption = "Linear mixed-effects models of weight over time.",
+  col.names = c(
+    "Parameter",
+    "Estimate (95% CI)", "p value",
+    "Estimate (95% CI)", "p value"
+  ),
+  row.names = FALSE,
+  align = c("l", "r", "r", "r", "r")
+)
+
+if (is_latex) args$booktabs <- TRUE
+
+tab_q1a <- do.call(knitr::kable, args) |>
+  add_header_above(
+    c(
+      " " = 1,
+      "Random intercept" = 2,
+      "Random intercept and slope" = 2
+    )
+  ) |>
+  pack_rows("Fixed effects", 1, 6) |>
+  pack_rows("Variance components", 7, 11)
+
+if (is_latex) {
+  tab_q1a <- tab_q1a |>
+    column_spec(1, width = "4.2cm") |>
+    kable_styling(
+      latex_options = c("hold_position", "scale_down"),
+      font_size = 9
+    )
+} else {
+  tab_q1a <- tab_q1a |>
+    column_spec(1, width = "260px") |>
+    kable_styling(
+      full_width = FALSE,
+      position = "center"
+    )
+}
+
+tab_q1a <- tab_q1a |>
+  footnote(
+    general = notes,
+    general_title = "Notes: ",
+    footnote_as_chunk = TRUE,
+    threeparttable = is_latex,
+    fixed_small_size = TRUE
+  )
+
+tab_q1a
+```
+
+
+\noindent\textbf{Interpretation of model (ii).}
+
+Let $D_{1k}=I(\mathrm{diet}_k=1)$ and
+$D_{2k}=I(\mathrm{diet}_k=2)$. The model is
+\[
+\begin{aligned}
+Y_{ki} ={}&
+\beta_0^*+\beta_1^*D_{1k}+\beta_2^*D_{2k}
++\beta_3^*t_{ki}
++\beta_4^*D_{1k}t_{ki}
++\beta_5^*D_{2k}t_{ki}\\
+&+\gamma_{0k}+\gamma_{1k}t_{ki}+\epsilon_{ki},
+\end{aligned}
+\]
+where
+\[
+\begin{pmatrix}
+\gamma_{0k}\\
+\gamma_{1k}
+\end{pmatrix}
+\sim N\left[
+\begin{pmatrix}0\\0\end{pmatrix},
+G
+\right],
+\qquad
+\epsilon_{ki}\sim N(0,\sigma_\epsilon^2).
+\]
+Random effects and residual errors are independent, and
+patients are independent of one another.
+
+\medskip
+\noindent\textbf{Fixed effects.}
+
+\begin{itemize}
+\item $\widehat{\beta}_0^*=250.992$:
+The estimated baseline mean weight in diet 0 was
+250.992 weight units
+(95\% CI: 249.979, 252.004).
+
+\item $\widehat{\beta}_1^*=-0.697$:
+At baseline, patients in diet 1 weighed an estimated
+0.697 units less than those in diet 0
+(95\% CI for the difference: $-2.141$, $0.748$;
+$p=0.341$).
+
+\item $\widehat{\beta}_2^*=-2.687$:
+At baseline, patients in diet 2 weighed an estimated
+2.687 units less than those in diet 0
+(95\% CI for the difference: $-4.132$, $-1.243$;
+$p<0.001$).
+
+\item $\widehat{\beta}_3^*=0.019$:
+Estimated mean weight in diet 0 increased by
+0.019 units per month
+(95\% CI: $-0.053$, $0.091$; $p=0.607$).
+There was insufficient evidence of a nonzero linear
+change in this group.
+
+\item $\widehat{\beta}_4^*=-0.102$:
+Monthly weight change in diet 1 was
+0.102 units lower than in diet 0
+(95\% CI for the difference: $-0.201$, $-0.003$;
+$p=0.044$).
+The estimated slope in diet 1 was
+\[
+\widehat{\beta}_3^*+\widehat{\beta}_4^*
+=-0.083
+\]
+weight units per month.
+
+\item $\widehat{\beta}_5^*=-0.491$:
+Monthly weight change in diet 2 was
+0.491 units lower than in diet 0
+(95\% CI for the difference: $-0.590$, $-0.393$;
+$p<0.001$).
+The estimated slope in diet 2 was
+\[
+\widehat{\beta}_3^*+\widehat{\beta}_5^*
+=-0.472
+\]
+weight units per month.
+\end{itemize}
+
+The treatment-specific slopes were calculated before
+rounding. They imply estimated average weight losses
+of 0.083 and 0.472 units per month in diets 1 and 2,
+respectively.
+
+The interaction coefficients represent differences
+between slopes. Their $p$ values test these differences
+relative to diet 0, rather than testing whether each
+treatment group's own slope equals zero.
+
+Because the model uses an identity link and mean-zero
+random effects, the fixed-effect trajectories also
+describe population mean trajectories within each
+treatment group. Individual trajectories vary around
+these means through the random intercept and slope.
+
+\medskip
+\noindent\textbf{Variance components.}
+
+The estimated random-effects covariance matrix was
+\[
+\widehat{G}=
+\begin{pmatrix}
+10.2416 & -0.2099\\
+-0.2099 & 0.0262
+\end{pmatrix},
+\qquad
+\widehat{\sigma}_\epsilon^2=1.0011.
+\]
+
+\begin{itemize}
+\item
+The random-intercept variance was 10.2416,
+corresponding to a standard deviation of
+3.200 weight units.
+It describes between-patient variation in underlying
+baseline weight around the treatment-specific
+baseline means.
+
+\item
+The random-slope variance was 0.0262,
+corresponding to a standard deviation of
+0.162 weight units per month.
+It describes between-patient variation in underlying
+monthly weight change around the treatment-specific
+mean slopes.
+
+\item
+The intercept--slope covariance was $-0.2099$,
+with a correlation of $-0.405$.
+Within a treatment group, patients whose underlying
+baseline weight was above the group mean tended
+to have lower, more negative weight-change slopes,
+indicating a greater tendency toward weight loss.
+
+\item
+The residual variance was 1.0011,
+corresponding to a standard deviation of
+1.001 weight units.
+It describes variation in observed weights around
+each patient's fitted trajectory after accounting
+for the fixed and random effects.
+\end{itemize}
+
+The intercept and residual variances have units of
+squared weight units; the slope variance has units
+of squared weight units per month squared; and
+the intercept--slope covariance has units of squared
+weight units per month. The correlation is dimensionless.
+
+
+
+
+
+
+
