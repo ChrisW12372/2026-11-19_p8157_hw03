@@ -982,8 +982,91 @@ under a working model that assigns the same correlation
 to every pair of measurements from the same patient.
 
 
+# part e
 
 
+```{r}
+# Joint robust Wald test of the diet-by-time interactions.
+interaction_terms <- c("diet1:time", "diet2:time")
 
+b <- coef(fit_gee_e)[interaction_terms]
+
+V <- vcov(fit_gee_e)[
+  interaction_terms,
+  interaction_terms,
+  drop = FALSE
+]
+
+wald_stat <- as.numeric(
+  t(b) %*% solve(V, b)
+)
+
+df <- length(b)
+
+p_value <- pchisq(
+  wald_stat,
+  df = df,
+  lower.tail = FALSE
+)
+
+wald_results <- data.frame(
+  Wald_statistic = wald_stat,
+  df = df,
+  p_value = p_value
+)
+
+wald_results
+
+
+# Estimated population mean weight change per month.
+beta <- coef(fit_gee_e)
+
+slope_results <- data.frame(
+  Diet = c("0", "1", "2"),
+  Monthly_weight_change = c(
+    beta["time"],
+    beta["time"] + beta["diet1:time"],
+    beta["time"] + beta["diet2:time"]
+  ),
+  row.names = NULL
+)
+
+slope_results
+```
+
+
+We tested whether the population mean rates of weight
+change were equal across the three treatment groups:
+\[
+H_0:\beta_4=\beta_5=0
+\quad\text{versus}\quad
+H_A:\text{at least one of }\beta_4,\beta_5
+\text{ is nonzero}.
+\]
+
+Using the GEE-E estimates and their robust sandwich
+covariance matrix, the joint Wald test gave
+\[
+W\approx105,\qquad df=2,\qquad
+p=1.71\times10^{-23}.
+\]
+We therefore reject $H_0$ and conclude that the average
+rate of weight change differs among the treatment groups.
+
+For a non-biostatistician collaborator, these results
+can be summarized as follows:
+
+There is strong evidence that the treatment groups
+had different average weight-change rates.
+Patients receiving counseling only at baseline had
+an estimated average weight increase of 0.0398 units
+per month. Patients receiving counseling at every visit
+had an estimated average weight loss of 0.0837 units
+per month, while those also offered free access to an
+exercise facility had an estimated average weight loss
+of 0.4604 units per month. The largest estimated average
+weight loss was therefore observed in the counseling-plus-exercise
+group. These are population averages; individual patients
+may have different weight-change patterns.
 
 

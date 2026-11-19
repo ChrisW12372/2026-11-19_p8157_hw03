@@ -2812,6 +2812,85 @@ strong within-patient association under a working model that assigns the
 same correlation to every pair of measurements from the same
 patient.</p>
 </div>
+<div id="part-e" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> part e</h1>
+<pre class="r"><code># Joint robust Wald test of the diet-by-time interactions.
+interaction_terms &lt;- c(&quot;diet1:time&quot;, &quot;diet2:time&quot;)
+
+b &lt;- coef(fit_gee_e)[interaction_terms]
+
+V &lt;- vcov(fit_gee_e)[
+  interaction_terms,
+  interaction_terms,
+  drop = FALSE
+]
+
+wald_stat &lt;- as.numeric(
+  t(b) %*% solve(V, b)
+)
+
+df &lt;- length(b)
+
+p_value &lt;- pchisq(
+  wald_stat,
+  df = df,
+  lower.tail = FALSE
+)
+
+wald_results &lt;- data.frame(
+  Wald_statistic = wald_stat,
+  df = df,
+  p_value = p_value
+)
+
+wald_results</code></pre>
+<pre><code>##   Wald_statistic df  p_value
+## 1            105  2 1.71e-23</code></pre>
+<pre class="r"><code># Estimated population mean weight change per month.
+beta &lt;- coef(fit_gee_e)
+
+slope_results &lt;- data.frame(
+  Diet = c(&quot;0&quot;, &quot;1&quot;, &quot;2&quot;),
+  Monthly_weight_change = c(
+    beta[&quot;time&quot;],
+    beta[&quot;time&quot;] + beta[&quot;diet1:time&quot;],
+    beta[&quot;time&quot;] + beta[&quot;diet2:time&quot;]
+  ),
+  row.names = NULL
+)
+
+slope_results</code></pre>
+<pre><code>##   Diet Monthly_weight_change
+## 1    0                0.0398
+## 2    1               -0.0837
+## 3    2               -0.4604</code></pre>
+<p>We tested whether the population mean rates of weight change were
+equal across the three treatment groups: <span class="math display">\[
+H_0:\beta_4=\beta_5=0
+\quad\text{versus}\quad
+H_A:\text{at least one of }\beta_4,\beta_5
+\text{ is nonzero}.
+\]</span></p>
+<p>Using the GEE-E estimates and their robust sandwich covariance
+matrix, the joint Wald test gave <span class="math display">\[
+W\approx105,\qquad df=2,\qquad
+p=1.71\times10^{-23}.
+\]</span> We therefore reject <span class="math inline">\(H_0\)</span>
+and conclude that the average rate of weight change differs among the
+treatment groups.</p>
+<p>For a non-biostatistician collaborator, these results can be
+summarized as follows:</p>
+<p>There is strong evidence that the treatment groups had different
+average weight-change rates. Patients receiving counseling only at
+baseline had an estimated average weight increase of 0.0398 units per
+month. Patients receiving counseling at every visit had an estimated
+average weight loss of 0.0837 units per month, while those also offered
+free access to an exercise facility had an estimated average weight loss
+of 0.4604 units per month. The largest estimated average weight loss was
+therefore observed in the counseling-plus-exercise group. These are
+population averages; individual patients may have different
+weight-change patterns.</p>
+</div>
 
 
 
