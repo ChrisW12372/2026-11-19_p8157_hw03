@@ -1,0 +1,1143 @@
+---
+title: "2026-11-19_p8157_hw-03"
+author: "Chris"
+date: "2026-11-19"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+
+```{r warning=FALSE, message=FALSE}
+library(nlme)
+library(knitr)
+library(kableExtra)
+library(geepack)
+
+load("WtLoss.RData")
+```
+
+
+# part a
+
+```{r}
+str(wtloss)
+
+wtloss$diet <- factor(wtloss$diet, levels = c(0, 1, 2))
+contrasts(wtloss$diet) <- contr.treatment(
+  levels(wtloss$diet),
+  base = 1
+)
+
+wtloss$id <- factor(wtloss$id)
+wtloss <- wtloss[order(wtloss$id, wtloss$time), ]
+```
+
+
+```{r}
+# Model (i): random intercept
+fit_ri <- lme(
+  fixed = weight ~ diet * time,
+  random = ~ 1 | id,
+  data = wtloss,
+  method = "REML"
+)
+
+
+# Model (ii): correlated random intercept and time slope
+fit_ris <- lme(
+  fixed = weight ~ diet * time,
+  random = ~ 1 + time | id,
+  data = wtloss,
+  method = "REML"
+)
+```
+
+
+```{r}
+summary(fit_ri)
+summary(fit_ris)
+
+VarCorr(fit_ri)
+VarCorr(fit_ris)
+
+intervals(fit_ri, which = "fixed")
+intervals(fit_ris, which = "fixed")
+
+
+# Random-effects covariance and correlation matrices
+G_ris <- as.matrix(
+  getVarCov(fit_ris, type = "random.effects")
+)
+
+G_ris
+cov2cor(G_ris)
+
+# Residual variance
+sigma(fit_ris)^2
+```
+
+```{r q1a-table, echo=FALSE, results='asis', message=FALSE, warning=FALSE, comment=NA}
+terms <- c(
+  "(Intercept)", "diet1", "diet2",
+  "time", "diet1:time", "diet2:time"
+)
+
+labels <- c(
+  "Baseline mean: diet 0",
+  "Baseline difference: diet 1 vs 0",
+  "Baseline difference: diet 2 vs 0",
+  "Monthly change: diet 0",
+  "Slope difference: diet 1 vs 0",
+  "Slope difference: diet 2 vs 0"
+)
+
+extract_fixed <- function(fit) {
+  tt <- summary(fit)$tTable[terms, , drop = FALSE]
+  ci <- intervals(fit, which = "fixed")$fixed[
+    terms, , drop = FALSE
+  ]
+
+  data.frame(
+    estimate = sprintf(
+      "%.3f (%.3f, %.3f)",
+      tt[, "Value"], ci[, "lower"], ci[, "upper"]
+    ),
+    p = ifelse(
+      tt[, "p-value"] < 0.001,
+      "<0.001",
+      sprintf("%.3f", tt[, "p-value"])
+    )
+  )
+}
+
+ri <- extract_fixed(fit_ri)
+ris <- extract_fixed(fit_ris)
+
+G_ri <- as.matrix(
+  getVarCov(fit_ri, type = "random.effects")
+)
+G_ris <- as.matrix(
+  getVarCov(fit_ris, type = "random.effects")
+)
+
+fixed_rows <- data.frame(
+  Parameter = labels,
+  RI = ri$estimate,
+  RI_p = ri$p,
+  RIS = ris$estimate,
+  RIS_p = ris$p
+)
+
+random_rows <- data.frame(
+  Parameter = c(
+    "Random-intercept variance",
+    "Random-slope variance",
+    "Intercept-slope covariance",
+    "Intercept-slope correlation",
+    "Residual variance"
+  ),
+  RI = c(
+    sprintf("%.4f", G_ri[1, 1]),
+    rep("--", 3),
+    sprintf("%.4f", sigma(fit_ri)^2)
+  ),
+  RI_p = "",
+  RIS = sprintf(
+    "%.4f",
+    c(
+      G_ris[1, 1],
+      G_ris[2, 2],
+      G_ris[1, 2],
+      cov2cor(G_ris)[1, 2],
+      sigma(fit_ris)^2
+    )
+  ),
+  RIS_p = ""
+)
+
+table_data <- rbind(fixed_rows, random_rows)
+is_latex <- knitr::is_latex_output()
+
+notes <- paste(
+  "Both models were fitted by REML using 997 observations from 120 patients.",
+  "Time is in months; month 0 is baseline.",
+  "Diet 0 is the reference group: baseline counseling only;",
+  "diet 1: counseling at all visits;",
+  "diet 2: counseling at all visits plus free exercise-facility access.",
+  "Fixed effects are estimates (95% CIs) with model-based t-test p values.",
+  "Variance components and the correlation are point estimates only.",
+  "A dash indicates a parameter absent from model (i).",
+  "Weight is reported in the original, unspecified measurement units."
+)
+
+args <- list(
+  x = table_data,
+  format = if (is_latex) "latex" else "html",
+  caption = "Linear mixed-effects models of weight over time.",
+  col.names = c(
+    "Parameter",
+    "Estimate (95% CI)", "p value",
+    "Estimate (95% CI)", "p value"
+  ),
+  row.names = FALSE,
+  align = c("l", "r", "r", "r", "r")
+)
+
+if (is_latex) args$booktabs <- TRUE
+
+tab_q1a <- do.call(knitr::kable, args) |>
+  add_header_above(
+    c(
+      " " = 1,
+      "Random intercept" = 2,
+      "Random intercept and slope" = 2
+    )
+  ) |>
+  pack_rows("Fixed effects", 1, 6) |>
+  pack_rows("Variance components", 7, 11)
+
+if (is_latex) {
+  tab_q1a <- tab_q1a |>
+    column_spec(1, width = "4.2cm") |>
+    kable_styling(
+      latex_options = c("hold_position", "scale_down"),
+      font_size = 9
+    )
+} else {
+  tab_q1a <- tab_q1a |>
+    column_spec(1, width = "260px") |>
+    kable_styling(
+      full_width = FALSE,
+      position = "center"
+    )
+}
+
+tab_q1a <- tab_q1a |>
+  footnote(
+    general = notes,
+    general_title = "Notes: ",
+    footnote_as_chunk = TRUE,
+    threeparttable = is_latex,
+    fixed_small_size = TRUE
+  )
+
+tab_q1a
+```
+
+
+\noindent\textbf{Interpretation of model (ii).}
+
+Let $D_{1k}=I(\mathrm{diet}_k=1)$ and
+$D_{2k}=I(\mathrm{diet}_k=2)$. The model is
+\[
+\begin{aligned}
+Y_{ki} ={}&
+\beta_0^*+\beta_1^*D_{1k}+\beta_2^*D_{2k}
++\beta_3^*t_{ki}
++\beta_4^*D_{1k}t_{ki}
++\beta_5^*D_{2k}t_{ki}\\
+&+\gamma_{0k}+\gamma_{1k}t_{ki}+\epsilon_{ki},
+\end{aligned}
+\]
+where
+\[
+\begin{pmatrix}
+\gamma_{0k}\\
+\gamma_{1k}
+\end{pmatrix}
+\sim N\left[
+\begin{pmatrix}0\\0\end{pmatrix},
+G
+\right],
+\qquad
+\epsilon_{ki}\sim N(0,\sigma_\epsilon^2).
+\]
+Random effects and residual errors are independent, and
+patients are independent of one another.
+
+\medskip
+\noindent\textbf{Fixed effects.}
+
+\begin{itemize}
+\item $\widehat{\beta}_0^*=250.992$:
+The estimated baseline mean weight in diet 0 was
+250.992 weight units
+(95\% CI: 249.979, 252.004).
+
+\item $\widehat{\beta}_1^*=-0.697$:
+At baseline, patients in diet 1 weighed an estimated
+0.697 units less than those in diet 0
+(95\% CI for the difference: $-2.141$, $0.748$;
+$p=0.341$).
+
+\item $\widehat{\beta}_2^*=-2.687$:
+At baseline, patients in diet 2 weighed an estimated
+2.687 units less than those in diet 0
+(95\% CI for the difference: $-4.132$, $-1.243$;
+$p<0.001$).
+
+\item $\widehat{\beta}_3^*=0.019$:
+Estimated mean weight in diet 0 increased by
+0.019 units per month
+(95\% CI: $-0.053$, $0.091$; $p=0.607$).
+There was insufficient evidence of a nonzero linear
+change in this group.
+
+\item $\widehat{\beta}_4^*=-0.102$:
+Monthly weight change in diet 1 was
+0.102 units lower than in diet 0
+(95\% CI for the difference: $-0.201$, $-0.003$;
+$p=0.044$).
+The estimated slope in diet 1 was
+\[
+\widehat{\beta}_3^*+\widehat{\beta}_4^*
+=-0.083
+\]
+weight units per month.
+
+\item $\widehat{\beta}_5^*=-0.491$:
+Monthly weight change in diet 2 was
+0.491 units lower than in diet 0
+(95\% CI for the difference: $-0.590$, $-0.393$;
+$p<0.001$).
+The estimated slope in diet 2 was
+\[
+\widehat{\beta}_3^*+\widehat{\beta}_5^*
+=-0.472
+\]
+weight units per month.
+\end{itemize}
+
+The treatment-specific slopes were calculated before
+rounding. They imply estimated average weight losses
+of 0.083 and 0.472 units per month in diets 1 and 2,
+respectively.
+
+The interaction coefficients represent differences
+between slopes. Their $p$ values test these differences
+relative to diet 0, rather than testing whether each
+treatment group's own slope equals zero.
+
+Because the model uses an identity link and mean-zero
+random effects, the fixed-effect trajectories also
+describe population mean trajectories within each
+treatment group. Individual trajectories vary around
+these means through the random intercept and slope.
+
+\medskip
+\noindent\textbf{Variance components.}
+
+The estimated random-effects covariance matrix was
+\[
+\widehat{G}=
+\begin{pmatrix}
+10.2416 & -0.2099\\
+-0.2099 & 0.0262
+\end{pmatrix},
+\qquad
+\widehat{\sigma}_\epsilon^2=1.0011.
+\]
+
+\begin{itemize}
+\item
+The random-intercept variance was 10.2416,
+corresponding to a standard deviation of
+3.200 weight units.
+It describes between-patient variation in underlying
+baseline weight around the treatment-specific
+baseline means.
+
+\item
+The random-slope variance was 0.0262,
+corresponding to a standard deviation of
+0.162 weight units per month.
+It describes between-patient variation in underlying
+monthly weight change around the treatment-specific
+mean slopes.
+
+\item
+The intercept--slope covariance was $-0.2099$,
+with a correlation of $-0.405$.
+Within a treatment group, patients whose underlying
+baseline weight was above the group mean tended
+to have lower, more negative weight-change slopes,
+indicating a greater tendency toward weight loss.
+
+\item
+The residual variance was 1.0011,
+corresponding to a standard deviation of
+1.001 weight units.
+It describes variation in observed weights around
+each patient's fitted trajectory after accounting
+for the fixed and random effects.
+\end{itemize}
+
+The intercept and residual variances have units of
+squared weight units; the slope variance has units
+of squared weight units per month squared; and
+the intercept--slope covariance has units of squared
+weight units per month. The correlation is dimensionless.
+
+
+
+# part b
+
+
+```{r}
+# Use the default simulation algorithm and save the results.
+cache_file <- "Q1b_default_REML_seed1504.rds"
+
+if (file.exists(cache_file)) {
+  sim_b <- readRDS(cache_file)
+} else {
+  sim_b <- simulate.lme(
+    object = fit_ri,
+    m2 = fit_ris,
+    nsim = 1000,
+    seed = 1504,
+    method = "REML"
+  )
+
+  saveRDS(sim_b, cache_file)
+}
+
+null_fit <- sim_b$null$REML
+alt_fit <- sim_b$alt$REML
+
+table(
+  Null = null_fit[, "info"],
+  Alternative = alt_fit[, "info"]
+)
+
+
+# Follow the statistic construction in plot.simulate.lme().
+ok <- null_fit[, "info"] == 0 &
+      alt_fit[, "info"] == 0 &
+      is.finite(null_fit[, "logLik"]) &
+      is.finite(alt_fit[, "logLik"])
+
+if (!all(ok)) {
+  warning("Only converged simulations are used; inspect the reported count.")
+}
+
+T_sim <- 2 * pmax(
+  0,
+  alt_fit[ok, "logLik"] - null_fit[ok, "logLik"]
+)
+
+T_obs <- 2 * as.numeric(
+  logLik(fit_ris) - logLik(fit_ri)
+)
+
+q95 <- c(
+  Simulated = unname(quantile(T_sim, 0.95)),
+  Chi_square_1 = qchisq(0.95, df = 1),
+  Chi_square_2 = qchisq(0.95, df = 2)
+)
+
+critical_values <- data.frame(
+  Distribution = names(q95),
+  Percentile_95 = unname(q95)
+)
+
+test_results <- data.frame(
+  Observed_RLRT = T_obs,
+  Simulations_used = length(T_sim),
+  Bootstrap_p =
+    (1 + sum(T_sim >= T_obs)) / (length(T_sim) + 1)
+)
+
+critical_values
+test_results
+
+
+# Plot the simulated distribution and theoretical densities.
+hist(
+  T_sim,
+  breaks = 30,
+  probability = TRUE,
+  col = "grey85",
+  border = "white",
+  xlim = c(0, max(T_sim, qchisq(0.995, 2))),
+  main = "Null distribution of the RLRT statistic",
+  xlab = "Restricted likelihood-ratio statistic",
+  ylab = "Density"
+)
+
+curve(
+  dchisq(x, df = 1),
+  from = 0.001,
+  add = TRUE,
+  col = "red3",
+  lwd = 2
+)
+
+curve(
+  dchisq(x, df = 2),
+  from = 0,
+  add = TRUE,
+  col = "blue3",
+  lwd = 2
+)
+
+abline(
+  v = q95,
+  col = c("black", "red3", "blue3"),
+  lty = 2,
+  lwd = 2
+)
+
+legend(
+  "topright",
+  legend = sprintf(
+    c(
+      "Simulated: 95%% = %.3f",
+      "Chi-square(1): 95%% = %.3f",
+      "Chi-square(2): 95%% = %.3f"
+    ),
+    q95
+  ),
+  col = c("black", "red3", "blue3"),
+  lty = c(2, 1, 1),
+  lwd = 2,
+  bty = "n",
+  cex = 0.85
+)
+```
+
+Let $\sigma_1^2$ denote the variance of the random time slope
+and $\sigma_{01}$ the covariance between the random intercept
+and slope. We tested
+\[
+H_0:\sigma_1^2=0
+\quad\text{versus}\quad
+H_A:\sigma_1^2>0.
+\]
+Under $H_0$, positive semidefiniteness of the random-effects
+covariance matrix also requires $\sigma_{01}=0$.
+Under $H_A$, this covariance is estimated without being
+restricted to zero.
+
+This is a nonstandard testing problem because a variance
+of zero lies on the boundary of the parameter space.
+For this model comparison, the asymptotic reference
+distribution is
+\[
+\frac{1}{2}\chi_1^2+\frac{1}{2}\chi_2^2,
+\]
+rather than a conventional chi-square distribution based
+solely on the number of additional parameters.
+
+We used \texttt{simulate.lme()} to generate 1,000 datasets
+under the fitted random-intercept model, with seed 1504.
+Both models were fitted by REML to each simulated dataset.
+The observed restricted likelihood-ratio statistic was
+\[
+T_{\mathrm{obs}}
+=
+2\left\{
+\ell_R(\widehat{\theta}_{\mathrm{RIS}})
+-
+\ell_R(\widehat{\theta}_{\mathrm{RI}})
+\right\}
+=
+72.899.
+\]
+
+The simulated null distribution was right-skewed.
+Its estimated 95th percentile was 4.529, between the
+corresponding percentiles of the $\chi_1^2$ and $\chi_2^2$
+distributions, 3.841 and 5.991, respectively.
+Relative to the simulated critical value, using
+$\chi_1^2$ alone would give a lower rejection threshold,
+whereas using $\chi_2^2$ alone would give a higher threshold.
+
+The observed statistic was substantially greater than
+the simulated 95th percentile. None of the 1,000 simulated
+statistics was as large as the observed statistic.
+Using the Monte Carlo correction, the estimated
+bootstrap $p$ value was
+\[
+\widehat{p}
+=
+\frac{1+\sum_{b=1}^{1000}
+I(T_b\geq T_{\mathrm{obs}})}
+{1000+1}
+=
+\frac{1}{1001}
+\approx 0.001.
+\]
+
+We therefore reject $H_0$ at the 5\% significance level.
+The random-intercept and random-slope model provides
+a significantly better fit than the random-intercept-only
+model. After accounting for treatment group and its
+interaction with time, patients still differ in their
+rates of weight change. The random-intercept-only model
+is therefore inadequate to describe this between-patient
+variation in longitudinal trajectories.
+
+
+# part c
+
+
+```{r}
+# Conditional standardized residuals
+diag_data <- getData(fit_ri)
+
+diag_data$fitted <- as.numeric(
+  fitted(fit_ri, level = 1)
+)
+
+diag_data$residual <- as.numeric(
+  residuals(fit_ri, level = 1, type = "pearson")
+)
+
+vg <- Variogram(
+  fit_ri,
+  form = ~ time | id,
+  resType = "pearson"
+)
+
+old_par <- par(
+  mfrow = c(2, 2),
+  mar = c(4, 4, 3, 1)
+)
+
+
+# Residuals versus fitted values
+plot(
+  diag_data$fitted,
+  diag_data$residual,
+  pch = 16,
+  col = adjustcolor("black", alpha.f = 0.3),
+  xlab = "Conditional fitted weight",
+  ylab = "Standardized residual",
+  main = "Residuals vs fitted values"
+)
+
+abline(h = 0, col = "grey50", lty = 2)
+
+lines(
+  lowess(diag_data$fitted, diag_data$residual),
+  col = "red3",
+  lwd = 2
+)
+
+
+# Residual distribution over time
+boxplot(
+  residual ~ time,
+  data = diag_data,
+  col = "grey90",
+  xlab = "Month",
+  ylab = "Standardized residual",
+  main = "Residuals by month"
+)
+
+abline(h = 0, col = "red3", lty = 2)
+
+
+# Residual normality
+qqnorm(
+  diag_data$residual,
+  pch = 16,
+  cex = 0.5,
+  main = "Normal Q-Q plot of residuals"
+)
+
+qqline(
+  diag_data$residual,
+  col = "red3",
+  lwd = 2
+)
+
+
+# Within-patient residual dependence
+plot(
+  vg$dist,
+  vg$variog,
+  type = "b",
+  pch = 16,
+  xlab = "Time lag (months)",
+  ylab = "Semivariance",
+  main = "Residual semivariogram"
+)
+
+abline(h = 1, col = "red3", lty = 2)
+
+par(old_par)
+
+vg[, c("dist", "variog", "n.pairs")]
+```
+
+
+
+The standardized conditional residuals were generally centered
+near zero, and the residual-versus-fitted plot showed no strong
+systematic trend or pronounced funnel shape. The monthly
+boxplots showed some differences in residual location and
+spread. The normal Q--Q plot was approximately linear,
+with modest departures in the tails and a few extreme
+residuals, suggesting that normality was broadly reasonable.
+
+The residual semivariogram, however, showed a clear increase
+with time lag. The estimated semivariance increased from
+0.784 at a one-month lag to 2.328 at a ten-month lag.
+Under the random-intercept model with independent,
+homoscedastic residual errors, the standardized residual
+semivariogram would be expected to be approximately flat
+near 1. The observed pattern therefore suggests that the
+model does not adequately capture the within-patient
+covariance structure. Estimates at the longest lags are
+less precise because they are based on relatively few pairs,
+particularly 41 pairs at ten months and 15 pairs at eleven months.
+
+These findings are consistent with part (b), where the
+random-intercept-only model was rejected in favor of the
+random-intercept and random-slope model
+($T_{\mathrm{obs}}=72.899$, bootstrap $p\approx0.001$).
+The increasing semivariance is consistent with unmodeled
+between-patient variation in rates of weight change,
+supporting the inclusion of random time slopes.
+
+
+# part d
+
+
+```{r}
+gee_data <- wtloss[order(wtloss$id, wtloss$time), ]
+
+gee_data$id <- factor(gee_data$id)
+gee_data$diet <- factor(
+  gee_data$diet,
+  levels = c(0, 1, 2)
+)
+
+contrasts(gee_data$diet) <- contr.treatment(
+  levels(gee_data$diet),
+  base = 1
+)
+
+gee_data$visit <- gee_data$time + 1L
+
+
+# Working independence
+fit_gee_i <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "independence",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
+
+
+# Working exchangeable
+fit_gee_e <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "exchangeable",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
+
+
+# Working AR(1)
+fit_gee_ar1 <- geeglm(
+  weight ~ diet * time,
+  id = id,
+  waves = visit,
+  data = gee_data,
+  family = gaussian(link = "identity"),
+  corstr = "ar1",
+  scale.fix = FALSE,
+  std.err = "san.se"
+)
+
+summary(fit_gee_i)
+summary(fit_gee_e)
+summary(fit_gee_ar1)
+```
+
+
+```{r q1d-table, echo=FALSE, results='asis', message=FALSE, warning=FALSE, comment=NA}
+coef_order <- c(
+  "(Intercept)", "diet1", "diet2",
+  "time", "diet1:time", "diet2:time"
+)
+
+labels <- c(
+  "Baseline mean: diet 0",
+  "Baseline difference: diet 1 vs 0",
+  "Baseline difference: diet 2 vs 0",
+  "Monthly change: diet 0",
+  "Slope difference: diet 1 vs 0",
+  "Slope difference: diet 2 vs 0"
+)
+
+extract_gee <- function(fit) {
+  tt <- summary(fit)$coefficients[
+    coef_order, , drop = FALSE
+  ]
+
+  estimate <- tt[, "Estimate"]
+  se <- tt[, "Std.err"]
+
+  sprintf(
+    "%.4f (%.4f, %.4f)",
+    estimate,
+    estimate - qnorm(0.975) * se,
+    estimate + qnorm(0.975) * se
+  )
+}
+
+fixed_rows <- data.frame(
+  Parameter = labels,
+  I = extract_gee(fit_gee_i),
+  E = extract_gee(fit_gee_e),
+  AR1 = extract_gee(fit_gee_ar1)
+)
+
+working_rows <- data.frame(
+  Parameter = c(
+    "Working correlation parameter",
+    "Dispersion parameter"
+  ),
+  I = sprintf(
+    "%.4f",
+    c(0, fit_gee_i$geese$gamma[1])
+  ),
+  E = sprintf(
+    "%.4f",
+    c(
+      fit_gee_e$geese$alpha[1],
+      fit_gee_e$geese$gamma[1]
+    )
+  ),
+  AR1 = sprintf(
+    "%.4f",
+    c(
+      fit_gee_ar1$geese$alpha[1],
+      fit_gee_ar1$geese$gamma[1]
+    )
+  )
+)
+
+table_data <- rbind(fixed_rows, working_rows)
+is_latex <- knitr::is_latex_output()
+
+args <- list(
+  x = table_data,
+  format = if (is_latex) "latex" else "html",
+  caption = paste(
+    "GEE estimates of weight trajectories",
+    "under three working correlation structures."
+  ),
+  col.names = c("Parameter", "GEE-I", "GEE-E", "GEE-AR1"),
+  row.names = FALSE,
+  align = c("l", "r", "r", "r")
+)
+
+if (is_latex) args$booktabs <- TRUE
+
+tab_q1d <- do.call(knitr::kable, args) |>
+  pack_rows("Regression parameters", 1, 6) |>
+  pack_rows("Working covariance parameters", 7, 8)
+
+if (is_latex) {
+  tab_q1d <- tab_q1d |>
+    column_spec(1, width = "3.8cm") |>
+    kable_styling(
+      latex_options = c("hold_position", "scale_down"),
+      font_size = 9
+    )
+} else {
+  tab_q1d <- tab_q1d |>
+    column_spec(1, width = "250px") |>
+    kable_styling(
+      full_width = FALSE,
+      position = "center"
+    )
+}
+
+notes <- paste(
+  "GEE-I, working independence; GEE-E, working exchangeable;",
+  "GEE-AR1, working first-order autoregressive correlation.",
+  "All models used an identity link and the same mean model,",
+  "with 997 observations from 120 patients.",
+  "Regression entries are estimates (95% robust sandwich Wald CIs).",
+  "Working covariance parameters are point estimates only.",
+  "Diet 0 is the reference: baseline counseling only;",
+  "diet 1: counseling at all visits;",
+  "diet 2: counseling at all visits plus free exercise-facility access.",
+  "Time is in months, with month 0 representing baseline.",
+  "For GEE-AR1, the correlation parameter refers to a one-month lag;",
+  "for GEE-I it is fixed at zero.",
+  "Weight is reported in the original, unspecified measurement units."
+)
+
+tab_q1d <- tab_q1d |>
+  footnote(
+    general = notes,
+    general_title = "Notes: ",
+    footnote_as_chunk = TRUE,
+    threeparttable = is_latex,
+    fixed_small_size = TRUE
+  )
+
+tab_q1d
+```
+
+
+For the GEE-E analysis, the marginal mean model was
+\[
+\begin{aligned}
+E(Y_{ki}\mid D_{1k},D_{2k},t_{ki})
+={}&\beta_0+\beta_1D_{1k}+\beta_2D_{2k}
++\beta_3t_{ki}\\
+&+\beta_4D_{1k}t_{ki}
++\beta_5D_{2k}t_{ki},
+\end{aligned}
+\]
+where $D_{1k}=I(\mathrm{diet}_k=1)$ and
+$D_{2k}=I(\mathrm{diet}_k=2)$.
+Diet 0 was the reference group, and $t=0$ represented
+baseline. Confidence intervals and $p$ values were based
+on robust sandwich standard errors.
+
+\begin{itemize}
+\item $\widehat{\beta}_0=250.9455$:
+The estimated population mean baseline weight in diet 0
+was 250.9455 weight units
+(95\% CI: 249.8502, 252.0407).
+
+\item $\widehat{\beta}_1=-0.6464$:
+At baseline, the population mean weight in diet 1 was
+an estimated 0.6464 units lower than in diet 0
+(95\% CI for the difference: $-2.0892$, $0.7965$;
+$p=0.380$).
+There was insufficient evidence of a baseline
+mean difference between these groups.
+
+\item $\widehat{\beta}_2=-2.6607$:
+At baseline, the population mean weight in diet 2 was
+an estimated 2.6607 units lower than in diet 0
+(95\% CI for the difference: $-4.1276$, $-1.1938$;
+$p<0.001$).
+
+\item $\widehat{\beta}_3=0.0398$:
+In diet 0, population mean weight increased by an
+estimated 0.0398 units per month
+(95\% CI: $-0.0285$, $0.1081$; $p=0.253$).
+There was insufficient evidence of a nonzero
+linear change in this group.
+
+\item $\widehat{\beta}_4=-0.1235$:
+The monthly change in population mean weight in diet 1
+was 0.1235 units lower than in diet 0
+(95\% CI for the difference: $-0.2311$, $-0.0160$;
+$p=0.024$).
+The estimated slope in diet 1 was
+\[
+\widehat{\beta}_3+\widehat{\beta}_4
+\approx -0.084
+\]
+weight units per month.
+
+\item $\widehat{\beta}_5=-0.5002$:
+The monthly change in population mean weight in diet 2
+was 0.5002 units lower than in diet 0
+(95\% CI for the difference: $-0.5986$, $-0.4018$;
+$p<0.001$).
+The estimated slope in diet 2 was
+\[
+\widehat{\beta}_3+\widehat{\beta}_5
+\approx -0.460
+\]
+weight units per month.
+\end{itemize}
+
+Thus, the estimated population mean trajectories
+corresponded to average monthly weight losses of
+approximately 0.084 and 0.460 units in diets 1 and 2,
+respectively. The interaction coefficients represent
+differences between treatment-specific slopes;
+their $p$ values do not test whether each group's
+own slope equals zero.
+
+The estimated exchangeable working correlation was
+0.8583, indicating strong within-patient association
+under a working model that assigns the same correlation
+to every pair of measurements from the same patient.
+
+
+# part e
+
+
+```{r}
+# Joint robust Wald test of the diet-by-time interactions.
+interaction_terms <- c("diet1:time", "diet2:time")
+
+b <- coef(fit_gee_e)[interaction_terms]
+
+V <- vcov(fit_gee_e)[
+  interaction_terms,
+  interaction_terms,
+  drop = FALSE
+]
+
+wald_stat <- as.numeric(
+  t(b) %*% solve(V, b)
+)
+
+df <- length(b)
+
+p_value <- pchisq(
+  wald_stat,
+  df = df,
+  lower.tail = FALSE
+)
+
+wald_results <- data.frame(
+  Wald_statistic = wald_stat,
+  df = df,
+  p_value = p_value
+)
+
+wald_results
+
+
+# Estimated population mean weight change per month.
+beta <- coef(fit_gee_e)
+
+slope_results <- data.frame(
+  Diet = c("0", "1", "2"),
+  Monthly_weight_change = c(
+    beta["time"],
+    beta["time"] + beta["diet1:time"],
+    beta["time"] + beta["diet2:time"]
+  ),
+  row.names = NULL
+)
+
+slope_results
+```
+
+
+We tested whether the population mean rates of weight
+change were equal across the three treatment groups:
+\[
+H_0:\beta_4=\beta_5=0
+\quad\text{versus}\quad
+H_A:\text{at least one of }\beta_4,\beta_5
+\text{ is nonzero}.
+\]
+
+Using the GEE-E estimates and their robust sandwich
+covariance matrix, the joint Wald test gave
+\[
+W\approx105,\qquad df=2,\qquad
+p=1.71\times10^{-23}.
+\]
+We therefore reject $H_0$ and conclude that the average
+rate of weight change differs among the treatment groups.
+
+For a non-biostatistician collaborator, these results
+can be summarized as follows:
+
+There is strong evidence that the treatment groups
+had different average weight-change rates.
+Patients receiving counseling only at baseline had
+an estimated average weight increase of 0.0398 units
+per month. Patients receiving counseling at every visit
+had an estimated average weight loss of 0.0837 units
+per month, while those also offered free access to an
+exercise facility had an estimated average weight loss
+of 0.4604 units per month. The largest estimated average
+weight loss was therefore observed in the counseling-plus-exercise
+group. These are population averages; individual patients
+may have different weight-change patterns.
+
+
+# part f
+
+
+Assuming the mean model is correctly specified, independent
+patients, and the usual regularity and observation-process
+conditions, consistency of the regression estimates must
+be distinguished from validity of their standard errors.
+
+\medskip
+\noindent\textbf{Linear mixed-effects models in part (a).}
+
+For these identity-link linear models, the fixed-effect
+estimating equations have expectation zero under the
+correct mean model, even if the covariance structure is
+misspecified. Thus, the fixed-effect estimates from both
+the random-intercept and random-intercept/random-slope
+models can remain consistent.
+
+However, \texttt{lme()} reports model-based standard errors,
+whose validity depends on the covariance specification.
+Parts (b) and (c) provided evidence that the
+random-intercept-only covariance structure was inadequate.
+Its reported standard errors therefore cannot be assumed
+valid, even though its fixed-effect estimates may remain
+consistent. The random-intercept/random-slope model has
+valid model-based standard errors if its covariance
+structure is correctly specified. Its improved fit does
+not establish that every covariance assumption is correct.
+
+Correct specification of the mean alone also does not
+guarantee consistent estimation of the true variance
+components under a misspecified covariance model.
+
+\medskip
+\noindent\textbf{GEE models in part (d).}
+
+The regression estimates from GEE-I, GEE-E, and GEE-AR1
+are consistent under the correct mean model, even when
+their working correlation structures are incorrect.
+The standard errors reported in part (d) were robust
+sandwich standard errors, which are asymptotically valid
+under working covariance misspecification.
+
+The working correlation structure affects efficiency,
+so the three methods can produce different estimates
+and standard errors in this finite sample without
+contradicting their consistency. These asymptotic results
+depend primarily on the number of independent patients,
+here $K=120$, rather than the total of 997 observations.
+
+\medskip
+\noindent\textbf{Observation-process assumptions.}
+
+If follow-up is incomplete, missingness assumptions are
+also required. MCAR is a sufficient condition for the usual
+unweighted GEE analysis, whereas validity is not generally
+guaranteed under MAR without additional adjustment.
+A correctly specified likelihood-based model can support
+valid inference under MAR when the response-model and
+missingness-model parameters are distinct.
+Consequently, correct specification of the mean alone
+does not guarantee validity under arbitrary missingness.
+
+
+
+
+
+
+
+
+
+
+
+
+
